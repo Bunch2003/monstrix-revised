@@ -1,0 +1,12 @@
+# Private settings: Wi-Fi password, location, update password
+secrets.h
+
+# Build output
+build/
+*.bin
+*.elf
+*.map
+
+# OS clutter
+.DS_Store
+Thumbs.db

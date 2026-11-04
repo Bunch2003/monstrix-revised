@@ -1,0 +1,27 @@
+This repository contains two kinds of material under two licenses.
+
+1. FIRMWARE (everything in firmware/)
+   Licensed under the Creative Commons Attribution-NonCommercial 4.0
+   International License (CC BY-NC 4.0).
+   Full legal text: https://creativecommons.org/licenses/by-nc/4.0/legalcode
+
+   This firmware is an adaptation of the MONSTRIX firmware,
+   Copyright (c) 2025 Igor Fedorov (MONSTRIX), https://github.com/Belyiiii/monstrix-cod,
+   licensed under CC BY-NC 4.0. It has been substantially rewritten and extended.
+
+   It is designed to be compiled together with the FluxGarage RoboEyes library
+   (Copyright (C) 2024-2025 Dennis Hoelscher, GNU GPL v3 or later), which is
+   NOT included in this repository. Install it separately from the Arduino
+   Library Manager; it remains under its own license.
+
+2. 3D MODELS (everything in hardware/)
+   Licensed under the Creative Commons Attribution-ShareAlike 4.0
+   International License (CC BY-SA 4.0).
+   Full legal text: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+   The Nova shells are adaptations of "MONSTRIX Robot - Emotional Companion!"
+   by Igor Belyi (MakerWorld, CC BY-SA), itself a remix of "LDR Little Robot"
+   by Max Kern (https://makerworld.com/models/222658, CC BY-SA). They were
+   modified with new dragon and cat details and a sealed front.
+
+No warranty. Provided as is, for personal, non-commercial use.
