@@ -1,5 +1,5 @@
 /*
- * MONSTRIX Robot v2.12 - Animations + Day/Night + Web Remote + PlayStation + Hero FX
+ * MONSTRIX Robot v2.13 - Animations + Day/Night + Web Remote + PlayStation + Hero FX
  * ESP32-C3 + OLED 0.96" (+ optional MPU6050)
  * Uses FluxGarage_RoboEyes v1.1.x
  *
@@ -53,6 +53,7 @@ void maintainWiFi();
 void loadIdentity();
 void startOta();
 void announceOnNetwork();
+void printNetwork();
 String jsonEscape(const String& s);
 void updateBrightness();
 bool shouldDim();
@@ -1287,16 +1288,26 @@ void printMenu() {
     Serial.println(animations[i].name);
   }
   Serial.println("  t  Show time, sunset/sunrise and day/night");
+  Serial.println("  !  Show Wi-Fi status and web address");
   Serial.println("  N  Cycle test mode: auto -> force night -> force day");
   Serial.println("  ?  Show this list");
 }
 
 // ---------- Time and sunset ----------
 
+// Why the last Wi-Fi drop happened (shown by the ! key)
+volatile int wifiDrops = 0;
+volatile int lastDropReason = 0;
+
 void connectWiFi() {
   Serial.print("Connecting to Wi-Fi");
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);          // Wi-Fi power saving makes some routers (mesh especially) drop him
   WiFi.setAutoReconnect(true);
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    wifiDrops++;
+    lastDropReason = info.wifi_sta_disconnected.reason;
+  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.setHostname(HOSTNAME);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   // Many ESP32-C3 SuperMini boards won't connect at full power. Lowering it fixes that.
@@ -2374,9 +2385,11 @@ void handleMode() {
 
 // Announces http://<name>.local and the wireless-update port on the network.
 // Called again after every reconnect, because the announcement is lost when Wi-Fi drops.
+bool mdnsStarted = false;
 void announceOnNetwork() {
-  MDNS.end();
+  if (mdnsStarted) return;                   // the .local name survives Wi-Fi dropouts by itself
   if (MDNS.begin(HOSTNAME)) {
+    mdnsStarted = true;
     MDNS.addService("http", "tcp", 80);
     MDNS.addServiceTxt("http", "tcp", "name", robotName);
     MDNS.enableArduino(3232, true);          // shows up as a network port in Arduino IDE
@@ -2412,23 +2425,59 @@ void startWebServer() {
 // Keeps him on the network: retries Wi-Fi, starts the web page once it's up,
 // and re-announces the .local name after a dropout.
 void maintainWiFi() {
-  static unsigned long lastTry = 0;
-  static bool wasConnected = false;
+  static unsigned long lastCheck = 0, downSince = 0;
+  static bool wasConnected = true;           // setup() already handled the first connect
+  if (millis() - lastCheck < 1000) return;   // check once a second
+  lastCheck = millis();
   bool connected = WiFi.status() == WL_CONNECTED;
   if (connected && !wasConnected) {
     Serial.print("Wi-Fi connected: "); Serial.println(WiFi.localIP());
     configTzTime(TIMEZONE, "pool.ntp.org", "time.nist.gov");
     if (!webStarted) startWebServer();
-    else announceOnNetwork();
   }
-  if (!connected && wasConnected) Serial.println("Wi-Fi lost - reconnecting...");
-  if (!connected && millis() - lastTry > 10000) {      // nudge it every 10 s
-    lastTry = millis();
-    WiFi.disconnect();
+  if (!connected && wasConnected) {
+    Serial.print("Wi-Fi lost (");
+    Serial.print(WiFi.disconnectReasonName((wifi_err_reason_t)lastDropReason));
+    Serial.println(") - reconnecting...");
+    downSince = millis();
+  }
+  // The Wi-Fi library reconnects on its own. Only give it a fresh start if it's
+  // still down after 30 s (never interrupt an attempt that's in progress).
+  if (!connected && millis() - downSince > 30000) {
+    downSince = millis();
+    Serial.println("Still no Wi-Fi - starting a fresh connection");
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     WiFi.setTxPower(WIFI_POWER_8_5dBm);
   }
+  if (connected && !webStarted) startWebServer();
   wasConnected = connected;
+}
+
+void printNetwork() {
+  Serial.print("Wi-Fi: ");
+  Serial.println(WiFi.status() == WL_CONNECTED ? "connected" : "NOT connected");
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("  Address: http://"); Serial.println(WiFi.localIP());
+    Serial.print("  Name:    http://"); Serial.print(HOSTNAME);
+    Serial.println(mdnsStarted ? ".local" : ".local (not announced)");
+    Serial.print("  Signal:  "); Serial.print(WiFi.RSSI()); Serial.println(" dBm");
+  }
+  Serial.print("  Web page running: "); Serial.println(webStarted ? "yes" : "no");
+  Serial.print("  Wi-Fi drops since power-on: "); Serial.println(wifiDrops);
+  if (wifiDrops > 0) {
+    Serial.print("  Last drop reason: "); Serial.print(lastDropReason); Serial.print(" ");
+    Serial.println(WiFi.disconnectReasonName((wifi_err_reason_t)lastDropReason));
+  }
+  Serial.print("  Last restart cause: ");
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:  Serial.println("power on"); break;
+    case ESP_RST_SW:       Serial.println("software restart (e.g. after an update)"); break;
+    case ESP_RST_BROWNOUT: Serial.println("BROWNOUT - power dipped (cable/charger too weak)"); break;
+    case ESP_RST_PANIC:    Serial.println("crash"); break;
+    case ESP_RST_INT_WDT: case ESP_RST_TASK_WDT: case ESP_RST_WDT: Serial.println("watchdog (froze)"); break;
+    default:               Serial.println((int)esp_reset_reason()); break;
+  }
+  Serial.print("  Running for: "); Serial.print(millis() / 60000); Serial.println(" min");
 }
 
 // ---------- Setup ----------
@@ -2442,7 +2491,7 @@ void setup() {
 #endif
   loadIdentity();
   Serial.print(robotName);
-  Serial.println(" (Monstrix v2.12) starting...");
+  Serial.println(" (Monstrix v2.13) starting...");
   startPsn();   // loads any saved PlayStation sign-in and starts the background checker
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
@@ -2518,6 +2567,8 @@ void loop() {
     char key = Serial.read();
     if (key == '?') {
       printMenu();
+    } else if (key == '!') {
+      printNetwork();
     } else if (key == 't') {
       printStatus();
     } else if (key == 'N') {
